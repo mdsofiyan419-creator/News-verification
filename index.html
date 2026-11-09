@@ -43,12 +43,12 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
           </svg>
           <span class="text-sm font-medium text-slate-300" id="uploadLabel">Drop image or video clip here</span>
-          <span class="text-xs text-slate-500 mt-1">Images auto-optimized for rapid analysis</span>
+          <span class="text-xs text-slate-500 mt-1">Automatic Frame Sampling for Fast Analysis</span>
           <input type="file" id="fileInput" class="hidden" accept="image/*,video/*" onchange="handleFileSelect(event)">
         </label>
         <div id="previewContainer" class="hidden mt-4 rounded-lg overflow-hidden border border-slate-800 bg-black max-h-48 flex items-center justify-center">
           <img id="imgPreview" class="hidden max-h-48 w-auto object-contain" />
-          <video id="vidPreview" controls class="hidden max-h-48 w-full"></video>
+          <video id="vidPreview" controls playsinline class="hidden max-h-48 w-full"></video>
         </div>
       </div>
 
@@ -104,7 +104,7 @@
             </button>
           </div>
           <div id="reportOutput" class="text-xs text-slate-400 leading-relaxed space-y-4 max-h-[480px] overflow-y-auto pr-2">
-            <p class="italic text-slate-600">Select a media file and click execute. Gemini will evaluate the visual authenticity and synthesize an editorial brief ready for newsroom broadcast.</p>
+            <p class="italic text-slate-600">Select an image or video clip and click execute. Gemini will evaluate the visual authenticity and synthesize an editorial brief ready for newsroom broadcast.</p>
           </div>
         </div>
       </div>
@@ -124,8 +124,7 @@
   </div>
 
   <script>
-    let selectedBase64 = null;
-    let selectedMimeType = null;
+    let preparedFrames = []; // Array of base64 images
     let latestReportText = "";
 
     window.addEventListener('DOMContentLoaded', () => {
@@ -159,70 +158,100 @@
       }
     }
 
-    // Auto-compress high-res mobile photos so payload stays lightweight
-    function handleFileSelect(e) {
+    // Compress single image to canvas
+    function compressImage(img) {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      const maxDim = 1080;
+
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', 0.82).split(',')[1];
+    }
+
+    // Extract frame from video at target second
+    function extractVideoFrame(video, timeInSec) {
+      return new Promise((resolve) => {
+        video.currentTime = timeInSec;
+        video.onseeked = () => {
+          const canvas = document.createElement('canvas');
+          let width = video.videoWidth || 640;
+          let height = video.videoHeight || 360;
+          const maxDim = 960;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.78).split(',')[1]);
+        };
+      });
+    }
+
+    async function handleFileSelect(e) {
       const file = e.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadLabel').innerText = file.name;
+      preparedFrames = [];
+
+      const previewContainer = document.getElementById('previewContainer');
+      const previewImg = document.getElementById('imgPreview');
+      const previewVid = document.getElementById('vidPreview');
 
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onload = function(evt) {
           const img = new Image();
           img.onload = function() {
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
-            const maxDim = 1280;
-
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
-              } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
-              }
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            selectedBase64 = compressedDataUrl.split(',')[1];
-            selectedMimeType = 'image/jpeg';
-
-            const previewContainer = document.getElementById('previewContainer');
-            const previewImg = document.getElementById('imgPreview');
-            const previewVid = document.getElementById('vidPreview');
-
+            preparedFrames = [compressImage(img)];
             previewContainer.classList.remove('hidden');
-            previewImg.src = compressedDataUrl;
+            previewImg.src = evt.target.result;
             previewImg.classList.remove('hidden');
             previewVid.classList.add('hidden');
           };
           img.src = evt.target.result;
         };
         reader.readAsDataURL(file);
-      } else {
-        // Video handling
-        selectedMimeType = file.type;
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          selectedBase64 = evt.target.result.split(',')[1];
-          const previewContainer = document.getElementById('previewContainer');
-          const previewImg = document.getElementById('imgPreview');
-          const previewVid = document.getElementById('vidPreview');
+      } else if (file.type.startsWith('video/')) {
+        const videoUrl = URL.createObjectURL(file);
+        previewVid.src = videoUrl;
+        previewContainer.classList.remove('hidden');
+        previewVid.classList.remove('hidden');
+        previewImg.classList.add('hidden');
 
-          previewContainer.classList.remove('hidden');
-          previewVid.src = evt.target.result;
-          previewVid.classList.remove('hidden');
-          previewImg.classList.add('hidden');
+        previewVid.onloadedmetadata = async () => {
+          const dur = previewVid.duration;
+          // Capture 3 representative keyframes: beginning, middle, late
+          const f1 = await extractVideoFrame(previewVid, Math.max(0.5, dur * 0.15));
+          const f2 = await extractVideoFrame(previewVid, dur * 0.5);
+          const f3 = await extractVideoFrame(previewVid, dur * 0.85);
+          preparedFrames = [f1, f2, f3];
+          console.log("Extracted 3 video keyframes successfully");
         };
-        reader.readAsDataURL(file);
       }
     }
 
@@ -233,8 +262,8 @@
         toggleKeyModal();
         return;
       }
-      if (!selectedBase64) {
-        alert("Please upload an image or video clip first.");
+      if (preparedFrames.length === 0) {
+        alert("Please select a media file and allow a moment to sample frames.");
         return;
       }
 
@@ -244,17 +273,17 @@
       const runBtn = document.getElementById('runBtn');
 
       btnSpinner.classList.remove('hidden');
-      btnText.innerText = "Analyzing Frame & Synthesizing...";
+      btnText.innerText = "Analyzing Frames & Fact Checking...";
       runBtn.disabled = true;
 
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
       const promptInstructions = `
-Analyze the provided visual media and external claims to produce a complete editorial report.
-Return strictly valid JSON with no markdown wrapping or extra commentary:
+Analyze the provided visual media frame(s) and external claims to produce a complete forensic newsroom report.
+Return strictly valid JSON with no markdown wrapping or preamble:
 {
   "verdict": "CONFIRMED AUTHENTIC" | "LIKELY SYNTHETIC / AI" | "MANIPULATED / OUT OF CONTEXT",
-  "synthetic_risk_pct": 12,
+  "synthetic_risk_pct": 15,
   "optical_lighting_status": "Natural / Coherent" | "Mismatched Vectors",
   "edge_warp_status": "Clean Boundary" | "Diffusion Smearing",
   "chronology_status": "Current Event" | "Recycled Footage",
@@ -270,37 +299,34 @@ Return strictly valid JSON with no markdown wrapping or extra commentary:
 }
 `;
 
-      const payload = {
-        contents: [
-          {
-            parts: [
-              { text: promptInstructions + (extraContext ? `\nContext: "${extraContext}"` : "") },
-              {
-                inline_data: {
-                  mime_type: selectedMimeType,
-                  data: selectedBase64
-                }
-              }
-            ]
+      // Build content parts with all extracted frames
+      const parts = [{ text: promptInstructions + (extraContext ? `\nContext: "${extraContext}"` : "") }];
+      preparedFrames.forEach(base64Data => {
+        parts.push({
+          inline_data: {
+            mime_type: "image/jpeg",
+            data: base64Data
           }
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          response_mime_type: "application/json"
-        }
-      };
+        });
+      });
 
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            contents: [{ parts: parts }],
+            generationConfig: {
+              temperature: 0.1,
+              response_mime_type: "application/json"
+            }
+          })
         });
 
         const data = await res.json();
 
         if (data.error) {
-          throw new Error(data.error.message || "Google API rejected the request.");
+          throw new Error(data.error.message || "Google API returned an error.");
         }
 
         const rawText = data.candidates[0].content.parts[0].text;
