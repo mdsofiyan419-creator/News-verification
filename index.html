@@ -1,1 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VeritasDesk — AI Media Verification & News Dossier</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #0b0f17; color: #e2e8f0; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold">V</div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            VeritasDesk <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">Editorial Desk v1.0</span>
+          </h1>
+          <p class="text-xs text-slate-400">Automated Media Forensics & Real-Time News Dossier</p>
+        </div>
+      </div>
+      <div>
+        <button id="configKeyBtn" onclick="toggleKeyModal()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-md transition flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-amber-400" id="keyStatusDot"></span>
+          <span id="keyStatusText">Configure API Key</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <section class="lg:col-span-5 space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">1. Upload Source Media</h2>
+        <label for="fileInput" class="border-2 border-dashed border-slate-700 hover:border-cyan-500/60 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition bg-slate-950/40 group">
+          <svg class="w-10 h-10 text-slate-500 group-hover:text-cyan-400 mb-2 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+          </svg>
+          <span class="text-sm font-medium text-slate-300" id="uploadLabel">Drop image or video clip here</span>
+          <span class="text-xs text-slate-500 mt-1">JPEG, PNG, WebP, MP4, WebM (Up to 15MB)</span>
+          <input type="file" id="fileInput" class="hidden" accept="image/*,video/*" onchange="handleFileSelect(event)">
+        </label>
+        <div id="previewContainer" class="hidden mt-4 rounded-lg overflow-hidden border border-slate-800 bg-black max-h-48 flex items-center justify-center">
+          <img id="imgPreview" class="hidden max-h-48 w-auto object-contain" />
+          <video id="vidPreview" controls class="hidden max-h-48 w-full"></video>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">2. Optional Story Context</h2>
+        <textarea id="extraContext" rows="3" placeholder="Paste circulating tweet text, claims, or location details..." class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"></textarea>
+      </div>
+
+      <button id="runBtn" onclick="runAnalysis()" class="w-full py-3.5 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-cyan-500/10 transition flex items-center justify-center gap-2">
+        <svg id="btnSpinner" class="hidden animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <span id="btnText">Execute Forensic & Editorial Scan</span>
+      </button>
+    </section>
+
+    <section class="lg:col-span-7 space-y-6">
+      <div id="verdictCard" class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div>
+            <span class="text-xs text-slate-400 uppercase tracking-widest font-semibold">Integrity Verdict</span>
+            <div id="verdictBadge" class="text-xl font-bold mt-1 text-slate-500">AWAITING MEDIA INGESTION</div>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-slate-400 uppercase tracking-widest font-semibold">Synthetic Risk</span>
+            <div id="riskScore" class="text-xl font-bold mono text-slate-500">-- %</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80">
+            <div class="text-[10px] uppercase text-slate-500 font-semibold">Optical Lighting</div>
+            <div id="metricLighting" class="text-xs font-semibold text-slate-400 mt-1">Pending</div>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80">
+            <div class="text-[10px] uppercase text-slate-500 font-semibold">Edge / Warp</div>
+            <div id="metricWarp" class="text-xs font-semibold text-slate-400 mt-1">Pending</div>
+          </div>
+          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80">
+            <div class="text-[10px] uppercase text-slate-500 font-semibold">Chronology Check</div>
+            <div id="metricChrono" class="text-xs font-semibold text-slate-400 mt-1">Pending</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg flex flex-col justify-between min-h-[440px]">
+        <div>
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300">Journalistic Intelligence Dossier</h3>
+            <button id="downloadPdfBtn" onclick="exportPDF()" disabled class="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 px-3 py-1.5 rounded-md border border-slate-700 transition flex items-center gap-1.5 cursor-pointer">
+              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              Export Editorial PDF
+            </button>
+          </div>
+          <div id="reportOutput" class="text-xs text-slate-400 leading-relaxed space-y-4 max-h-[480px] overflow-y-auto pr-2">
+            <p class="italic text-slate-600">Select a media file and click execute. Gemini will evaluate the visual authenticity and synthesize an editorial brief ready for newsroom broadcast.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="keyModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl">
+      <h3 class="text-base font-bold text-white mb-1">Configure Gemini API Key</h3>
+      <p class="text-xs text-slate-400 mb-4">Your key is saved in local browser storage only and directly accesses Google's API.</p>
+      <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 mb-4 focus:outline-none focus:border-cyan-500">
+      <div class="flex items-center justify-end space-x-3">
+        <button onclick="toggleKeyModal()" class="px-4 py-2 text-xs text-slate-400 hover:text-white">Cancel</button>
+        <button onclick="saveApiKey()" class="px-4 py-2 text-xs bg-cyan-500 hover:bg-cyan-400 text-black font-semibold rounded-lg transition">Save Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let selectedBase64 = null;
+    let selectedMimeType = null;
+    let latestReportText = "";
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const stored = localStorage.getItem('gemini_api_key');
+      updateKeyUI(stored);
+      if (!stored) toggleKeyModal();
+    });
+
+    function toggleKeyModal() {
+      document.getElementById('keyModal').classList.toggle('hidden');
+    }
+
+    function saveApiKey() {
+      const key = document.getElementById('apiKeyInput').value.trim();
+      if (key) {
+        localStorage.setItem('gemini_api_key', key);
+        updateKeyUI(key);
+        toggleKeyModal();
+      }
+    }
+
+    function updateKeyUI(hasKey) {
+      const dot = document.getElementById('keyStatusDot');
+      const text = document.getElementById('keyStatusText');
+      if (hasKey) {
+        dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+        text.innerText = "Key Configured";
+      } else {
+        dot.className = "w-2 h-2 rounded-full bg-amber-400";
+        text.innerText = "Configure API Key";
+      }
+    }
+
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      document.getElementById('uploadLabel').innerText = file.name;
+      selectedMimeType = file.type;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const fullBase64 = evt.target.result;
+        selectedBase64 = fullBase64.split(',')[1];
+
+        const previewContainer = document.getElementById('previewContainer');
+        const img = document.getElementById('imgPreview');
+        const vid = document.getElementById('vidPreview');
+
+        previewContainer.classList.remove('hidden');
+        if (file.type.startsWith('image/')) {
+          img.src = fullBase64;
+          img.classList.remove('hidden');
+          vid.classList.add('hidden');
+        } else if (file.type.startsWith('video/')) {
+          vid.src = fullBase64;
+          vid.classList.remove('hidden');
+          img.classList.add('hidden');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function runAnalysis() {
+      const key = localStorage.getItem('gemini_api_key');
+      if (!key) {
+        alert("Please set your Gemini API Key first.");
+        toggleKeyModal();
+        return;
+      }
+      if (!selectedBase64) {
+        alert("Please upload an image or video clip first.");
+        return;
+      }
+
+      const extraContext = document.getElementById('extraContext').value;
+      const btnSpinner = document.getElementById('btnSpinner');
+      const btnText = document.getElementById('btnText');
+      const runBtn = document.getElementById('runBtn');
+
+      btnSpinner.classList.remove('hidden');
+      btnText.innerText = "Running Forensic Inspection...";
+      runBtn.disabled = true;
+
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+
+      const systemPrompt = `
+You are a senior forensic media analyst and news desk chief. Analyze the provided visual media and context to produce a complete editorial report.
+
+Respond in exactly this JSON format:
+{
+  "verdict": "CONFIRMED AUTHENTIC" | "LIKELY SYNTHETIC / AI" | "MANIPULATED / OUT OF CONTEXT",
+  "synthetic_risk_pct": 15,
+  "optical_lighting_status": "Natural / Coherent" | "Mismatched Vectors",
+  "edge_warp_status": "Clean Boundary" | "Diffusion Smearing",
+  "chronology_status": "Current Event" | "Recycled Footage",
+  "dossier_paragraphs": [
+    "Paragraph 1: Headline incident summary and breakdown of exactly what is depicted.",
+    "Paragraph 2: Key figures, geopolitical or local context, and geographical setting.",
+    "Paragraph 3: Chronological verification of events and matching web source timeline.",
+    "Paragraph 4: Primary social media claims vs verified factual records.",
+    "Paragraph 5: Witness accounts, regional reporting, and conflicting statements.",
+    "Paragraph 6: Broader socio-political, financial, or legal ramifications of the incident.",
+    "Paragraph 7: Actionable editorial advice and legal risk mitigation for broadcasting creators."
+  ]
+}
+`;
+
+      const requestPayload = {
+        contents: [
+          {
+            parts: [
+              { text: systemPrompt + (extraContext ? `\nUser context: "${extraContext}"` : "") },
+              {
+                inline_data: {
+                  mime_type: selectedMimeType,
+                  data: selectedBase64
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          response_mime_type: "application/json"
+        }
+      };
+
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestPayload)
+        });
+
+        const data = await res.json();
+        const rawJsonText = data.candidates[0].content.parts[0].text;
+        const parsed = JSON.parse(rawJsonText);
+
+        renderResults(parsed);
+      } catch (err) {
+        console.error(err);
+        alert("Analysis failed. Verify your API key or check that your media file is under inline payload limits.");
+      } finally {
+        btnSpinner.classList.add('hidden');
+        btnText.innerText = "Execute Forensic & Editorial Scan";
+        runBtn.disabled = false;
+      }
+    }
+
+    function renderResults(res) {
+      const vBadge = document.getElementById('verdictBadge');
+      const rScore = document.getElementById('riskScore');
+
+      vBadge.innerText = res.verdict;
+      rScore.innerText = `${res.synthetic_risk_pct}%`;
+
+      if (res.synthetic_risk_pct > 50) {
+        vBadge.className = "text-xl font-bold mt-1 text-rose-400";
+        rScore.className = "text-xl font-bold mono text-rose-400";
+      } else {
+        vBadge.className = "text-xl font-bold mt-1 text-emerald-400";
+        rScore.className = "text-xl font-bold mono text-emerald-400";
+      }
+
+      document.getElementById('metricLighting').innerText = res.optical_lighting_status;
+      document.getElementById('metricWarp').innerText = res.edge_warp_status;
+      document.getElementById('metricChrono').innerText = res.chronology_status;
+
+      const reportBox = document.getElementById('reportOutput');
+      reportBox.innerHTML = "";
+
+      latestReportText = `VERITASDESK EDITORIAL DOSSIER\nVerdict: ${res.verdict} (Risk: ${res.synthetic_risk_pct}%)\n\n`;
+
+      res.dossier_paragraphs.forEach((p, idx) => {
+        const pElem = document.createElement('p');
+        pElem.className = "text-slate-300 leading-relaxed";
+        pElem.innerHTML = `<strong class="text-white block mb-1">Section ${idx+1}:</strong> ${p}`;
+        reportBox.appendChild(pElem);
+        latestReportText += `[Section ${idx+1}]\n${p}\n\n`;
+      });
+
+      document.getElementById('downloadPdfBtn').disabled = false;
+    }
+
+    function exportPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: "pt", format: "letter" });
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text("VERITASDESK EDITORIAL VERIFICATION DOSSIER", 40, 50);
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100);
+      doc.text(`Generated: ${new Date().toUTCString()} | Status: Editorial Certified`, 40, 68);
+
+      doc.setDrawColor(200);
+      doc.line(40, 78, 570, 78);
+
+      const splitText = doc.splitTextToSize(latestReportText, 520);
+      doc.setFontSize(9);
+      doc.setTextColor(40);
+      doc.text(splitText, 40, 100);
+
+      doc.save("Editorial_Verification_Dossier.pdf");
+    }
+  </script>
+</body>
+  </html>
 
