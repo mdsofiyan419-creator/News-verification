@@ -43,7 +43,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
           </svg>
           <span class="text-sm font-medium text-slate-300" id="uploadLabel">Drop image or video clip here</span>
-          <span class="text-xs text-slate-500 mt-1">JPEG, PNG, WebP, MP4, WebM (Up to 15MB)</span>
+          <span class="text-xs text-slate-500 mt-1">Images auto-optimized for rapid analysis</span>
           <input type="file" id="fileInput" class="hidden" accept="image/*,video/*" onchange="handleFileSelect(event)">
         </label>
         <div id="previewContainer" class="hidden mt-4 rounded-lg overflow-hidden border border-slate-800 bg-black max-h-48 flex items-center justify-center">
@@ -159,34 +159,71 @@
       }
     }
 
+    // Auto-compress high-res mobile photos so payload stays lightweight
     function handleFileSelect(e) {
       const file = e.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadLabel').innerText = file.name;
-      selectedMimeType = file.type;
 
-      const reader = new FileReader();
-      reader.onload = function(evt) {
-        const fullBase64 = evt.target.result;
-        selectedBase64 = fullBase64.split(',')[1];
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const img = new Image();
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            const maxDim = 1280;
 
-        const previewContainer = document.getElementById('previewContainer');
-        const img = document.getElementById('imgPreview');
-        const vid = document.getElementById('vidPreview');
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
 
-        previewContainer.classList.remove('hidden');
-        if (file.type.startsWith('image/')) {
-          img.src = fullBase64;
-          img.classList.remove('hidden');
-          vid.classList.add('hidden');
-        } else if (file.type.startsWith('video/')) {
-          vid.src = fullBase64;
-          vid.classList.remove('hidden');
-          img.classList.add('hidden');
-        }
-      };
-      reader.readAsDataURL(file);
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            selectedBase64 = compressedDataUrl.split(',')[1];
+            selectedMimeType = 'image/jpeg';
+
+            const previewContainer = document.getElementById('previewContainer');
+            const previewImg = document.getElementById('imgPreview');
+            const previewVid = document.getElementById('vidPreview');
+
+            previewContainer.classList.remove('hidden');
+            previewImg.src = compressedDataUrl;
+            previewImg.classList.remove('hidden');
+            previewVid.classList.add('hidden');
+          };
+          img.src = evt.target.result;
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // Video handling
+        selectedMimeType = file.type;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          selectedBase64 = evt.target.result.split(',')[1];
+          const previewContainer = document.getElementById('previewContainer');
+          const previewImg = document.getElementById('imgPreview');
+          const previewVid = document.getElementById('vidPreview');
+
+          previewContainer.classList.remove('hidden');
+          previewVid.src = evt.target.result;
+          previewVid.classList.remove('hidden');
+          previewImg.classList.add('hidden');
+        };
+        reader.readAsDataURL(file);
+      }
     }
 
     async function runAnalysis() {
@@ -207,38 +244,37 @@
       const runBtn = document.getElementById('runBtn');
 
       btnSpinner.classList.remove('hidden');
-      btnText.innerText = "Running Forensic Inspection...";
+      btnText.innerText = "Analyzing Frame & Synthesizing...";
       runBtn.disabled = true;
 
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
-      const systemPrompt = `
-You are a senior forensic media analyst and news desk chief. Analyze the provided visual media and context to produce a complete editorial report.
-
-Respond in exactly this JSON format:
+      const promptInstructions = `
+Analyze the provided visual media and external claims to produce a complete editorial report.
+Return strictly valid JSON with no markdown wrapping or extra commentary:
 {
   "verdict": "CONFIRMED AUTHENTIC" | "LIKELY SYNTHETIC / AI" | "MANIPULATED / OUT OF CONTEXT",
-  "synthetic_risk_pct": 15,
+  "synthetic_risk_pct": 12,
   "optical_lighting_status": "Natural / Coherent" | "Mismatched Vectors",
   "edge_warp_status": "Clean Boundary" | "Diffusion Smearing",
   "chronology_status": "Current Event" | "Recycled Footage",
   "dossier_paragraphs": [
-    "Paragraph 1: Headline incident summary and breakdown of exactly what is depicted.",
-    "Paragraph 2: Key figures, geopolitical or local context, and geographical setting.",
-    "Paragraph 3: Chronological verification of events and matching web source timeline.",
-    "Paragraph 4: Primary social media claims vs verified factual records.",
-    "Paragraph 5: Witness accounts, regional reporting, and conflicting statements.",
-    "Paragraph 6: Broader socio-political, financial, or legal ramifications of the incident.",
-    "Paragraph 7: Actionable editorial advice and legal risk mitigation for broadcasting creators."
+    "Headline incident summary and forensic examination of the visual elements.",
+    "Identification of key figures, subjects, and geographical or studio background.",
+    "Chronological verification against confirmed real-world media timelines.",
+    "Analysis of circulating claims compared to verified physical and visual reality.",
+    "Assessment of source origin, compression artifacts, and secondary evidence.",
+    "Broader context and implications regarding digital misinformation on this topic.",
+    "Actionable editorial guidance for newsrooms and creators considering covering this."
   ]
 }
 `;
 
-      const requestPayload = {
+      const payload = {
         contents: [
           {
             parts: [
-              { text: systemPrompt + (extraContext ? `\nUser context: "${extraContext}"` : "") },
+              { text: promptInstructions + (extraContext ? `\nContext: "${extraContext}"` : "") },
               {
                 inline_data: {
                   mime_type: selectedMimeType,
@@ -258,17 +294,21 @@ Respond in exactly this JSON format:
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestPayload)
+          body: JSON.stringify(payload)
         });
 
         const data = await res.json();
-        const rawJsonText = data.candidates[0].content.parts[0].text;
-        const parsed = JSON.parse(rawJsonText);
 
+        if (data.error) {
+          throw new Error(data.error.message || "Google API rejected the request.");
+        }
+
+        const rawText = data.candidates[0].content.parts[0].text;
+        const parsed = JSON.parse(rawText);
         renderResults(parsed);
       } catch (err) {
         console.error(err);
-        alert("Analysis failed. Verify your API key or check that your media file is under inline payload limits.");
+        alert(`API Error: ${err.message}`);
       } finally {
         btnSpinner.classList.add('hidden');
         btnText.innerText = "Execute Forensic & Editorial Scan";
@@ -336,5 +376,4 @@ Respond in exactly this JSON format:
     }
   </script>
 </body>
-  </html>
-
+</html>
