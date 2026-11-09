@@ -255,7 +255,134 @@
       }
     }
 
+        async function callGeminiWithFallback(key, payload) {
+      const modelCandidates = [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash"
+      ];
+
+      let lastError = null;
+
+      for (const model of modelCandidates) {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+
+            if (data.error) {
+              const code = data.error.code;
+              const msg = data.error.message || "";
+              if (code === 503 || code === 429 || msg.includes("high demand") || msg.includes("quota")) {
+                await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+                continue;
+              }
+              throw new Error(msg);
+            }
+
+            if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+              return data.candidates[0].content.parts[0].text;
+            }
+          } catch (err) {
+            lastError = err;
+          }
+        }
+      }
+
+      throw lastError || new Error("Verification network is currently stabilizing. Please retry in a moment.");
+    }
+
     async function runAnalysis() {
+      const key = localStorage.getItem('gemini_api_key');
+      if (!key) {
+        toggleKeyModal();
+        return;
+      }
+      if (preparedFrames.length === 0) {
+        showStatusNotice("Please upload a video or photo first.", "warning");
+        return;
+      }
+
+      const extraContext = document.getElementById('extraContext').value;
+      const btnSpinner = document.getElementById('btnSpinner');
+      const btnText = document.getElementById('btnText');
+      const runBtn = document.getElementById('runBtn');
+
+      btnSpinner.classList.remove('hidden');
+      btnText.innerText = "Scanning Media & Fact Checking...";
+      runBtn.disabled = true;
+
+      const promptInstructions = `
+Analyze the provided visual media frame(s) and external claims to produce a complete forensic newsroom report.
+Return strictly valid JSON with no markdown wrapping:
+{
+  "verdict": "CONFIRMED AUTHENTIC" | "LIKELY SYNTHETIC / AI" | "MANIPULATED / OUT OF CONTEXT",
+  "synthetic_risk_pct": 15,
+  "optical_lighting_status": "Natural / Coherent" | "Mismatched Vectors",
+  "edge_warp_status": "Clean Boundary" | "Diffusion Smearing",
+  "chronology_status": "Current Event" | "Recycled Footage",
+  "dossier_paragraphs": [
+    "Headline incident summary and forensic examination of the visual elements.",
+    "Identification of key figures, subjects, and geographical or studio background.",
+    "Chronological verification against confirmed real-world media timelines.",
+    "Analysis of circulating claims compared to verified physical and visual reality.",
+    "Assessment of source origin, compression artifacts, and secondary evidence.",
+    "Broader context and implications regarding digital misinformation on this topic.",
+    "Actionable editorial guidance for newsrooms and creators considering covering this."
+  ]
+}
+`;
+
+      const parts = [{ text: promptInstructions + (extraContext ? `\nContext: "${extraContext}"` : "") }];
+      preparedFrames.forEach(base64Data => {
+        parts.push({
+          inline_data: {
+            mime_type: "image/jpeg",
+            data: base64Data
+          }
+        });
+      });
+
+      const payload = {
+        contents: [{ parts: parts }],
+        generationConfig: {
+          temperature: 0.1,
+          response_mime_type: "application/json"
+        }
+      };
+
+      try {
+        const rawJsonText = await callGeminiWithFallback(key, payload);
+        const parsed = JSON.parse(rawJsonText);
+        renderResults(parsed);
+      } catch (err) {
+        console.error(err);
+        showStatusNotice(err.message, "error");
+      } finally {
+        btnSpinner.classList.add('hidden');
+        btnText.innerText = "Execute Forensic & Editorial Scan";
+        runBtn.disabled = false;
+      }
+    }
+
+    function showStatusNotice(message, type) {
+      const reportBox = document.getElementById('reportOutput');
+      const color = type === "error" ? "text-rose-400 border-rose-900/50 bg-rose-950/20" : "text-amber-400 border-amber-900/50 bg-amber-950/20";
+      reportBox.innerHTML = `
+        <div class="p-4 rounded-lg border ${color} text-xs">
+          <strong>Notice:</strong> ${message}
+          <div class="mt-2 text-slate-400">Click <em>Execute</em> to re-run with automated channel routing.</div>
+        </div>
+      `;
+    }
+    
       const key = localStorage.getItem('gemini_api_key');
       if (!key) {
         alert("Please set your Gemini API Key first.");
