@@ -211,7 +211,7 @@
       });
     }
 
-    async function handleFileSelect(e) {
+        function handleFileSelect(e) {
       const file = e.target.files[0];
       if (!file) return;
 
@@ -243,23 +243,30 @@
         previewVid.classList.remove('hidden');
         previewImg.classList.add('hidden');
 
-        previewVid.onloadedmetadata = async () => {
-          const dur = previewVid.duration;
-          // Capture 3 representative keyframes: beginning, middle, late
-          const f1 = await extractVideoFrame(previewVid, Math.max(0.5, dur * 0.15));
-          const f2 = await extractVideoFrame(previewVid, dur * 0.5);
-          const f3 = await extractVideoFrame(previewVid, dur * 0.85);
-          preparedFrames = [f1, f2, f3];
-          console.log("Extracted 3 video keyframes successfully");
+        previewVid.onloadeddata = () => {
+          previewVid.currentTime = 1.0;
+        };
+
+        previewVid.onseeked = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 640;
+          canvas.height = 360;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(previewVid, 0, 0, 640, 360);
+          preparedFrames = [canvas.toDataURL('image/jpeg', 0.8).split(',')[1]];
         };
       }
     }
+    
 
         async function callGeminiWithFallback(key, payload) {
       const modelCandidates = [
+        "gemini-3.8-flash",
         "gemini-2.5-flash",
-        "gemini-2.5-pro",
         "gemini-2.0-flash"
+        
+        
+      
       ];
 
       let lastError = null;
