@@ -276,8 +276,8 @@
       btnText.innerText = "Analyzing Frames & Fact Checking...";
       runBtn.disabled = true;
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
-
+const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${key}`;
+      
       const promptInstructions = `
 Analyze the provided visual media frame(s) and external claims to produce a complete forensic newsroom report.
 Return strictly valid JSON with no markdown wrapping or preamble:
